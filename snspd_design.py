@@ -50,7 +50,7 @@ def generate_cross():
 def generate_grill():
     pass
 
-def generate_taper(start_width, end_width, length, footprint, thickness=0.5, start_point=(0,0), orientation='r', corner_correction=3): #footprint in form (x,y) 
+def generate_taper(start_width, end_width, length, footprint, thickness=0.5, start_point=(0,0), orientation='r', corner_correction=3, rec_flag=False): #footprint in form (x,y) 
     taper=gdspy.Path(thickness, start_point, number_of_paths=2, distance=(start_width+thickness))
     taper.turn((start_width),'l') #first turn to go out of the nanowire
     #calculate the length of each straight section
@@ -97,13 +97,15 @@ def generate_taper(start_width, end_width, length, footprint, thickness=0.5, sta
             taper.rotate((np.pi))
     #Next section to remove lines to account for the lengths of the corners. Works by tuning the corner correction parameter until the line.length is within
     #acceptable limits.
-    #Below could result in infinite loop... Needs fixed
-    if taper.length > (length+1000): #accept within 1um either way.
-        corner_correction+=1
-        taper = generate_taper(start_width, end_width, length, footprint,corner_correction=corner_correction)
-    elif taper.length < (length-1000):
-        corner_correction-=1
-        taper = generate_taper(start_width, end_width, length, footprint,corner_correction=corner_correction)
+    #rec_flag parameter set to True ensures it only runs this section once and will not infinitely loop. If length is still wrong manually adjust the 
+    #corner_correction parameter. probably a better way to do this - will return to it.
+    if rec_flag==False:
+        if taper.length > (length+1000): #accept within 1um either way.
+            corner_correction+=1
+            taper = generate_taper(start_width, end_width, length, footprint,corner_correction=corner_correction, rec_flag=True)
+        elif taper.length < (length-1000):
+            corner_correction-=1
+            taper = generate_taper(start_width, end_width, length, footprint,corner_correction=corner_correction, rec_flag=True)
 
     print(f'Taper length:{taper.length}')
     return taper
