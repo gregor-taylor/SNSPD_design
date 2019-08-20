@@ -202,19 +202,53 @@ def generate_cpw(start_width, end_width, gap_start, gap_final, length, layer_def
     else:
         return [cpw]
 
-def generate_cpw_contacts(cpw_start_point, cpw_length, cpw_gapsize, thickness, nanowire_area, layer_def): #if odd angles required better to geneate CPW and contacts then rotate cell
-    elements_list=[]
-    #contact1
-    p1_x=cpw_start_point[0]-(pad_size[0]/2)
-    p1_y=cpw_start_point[1]+cpw_length
-    p2_x=cpw_start_point[0]+(pad_size[0]/2)
-    p2_y=cpw_start_point[1]+cpw_length+pad_size[1]
-    
+def generate_cpw_contacts(start_point, length, thickness, layer_def, cpw1, cpw2): #if odd angles required better to geneate CPW and contacts then rotate cell
+    short_length=length-(2*thickness)
+    points=[start_point]
+    current_x=start_point[0]
+    current_y=start_point[1]
+    current_x+=(length/2)
+    points.append((current_x, current_y))
+    current_y-=length
+    points.append((current_x, current_y))
+    current_x-=(length)
+    points.append((current_x, current_y))
+    current_y+=length
+    points.append((current_x, current_y))
+    current_x+=(length/2)
+    points.append((current_x, current_y))
+    #For whatever reason doesn't seem to want to create a hole of the second polygon so will create two and subtract
+    outer_poly=gdspy.Polygon(points, **layer_def)
+    #reset points
+    current_y-=thickness
+    points=[(current_x, current_y)]
+    current_x+=((short_length/2)+(thickness/2))
+    points.append((current_x, current_y))
+    current_y-=(short_length)
+    points.append((current_x, current_y))
+    current_x-=((short_length+(thickness/2)*(2/3)))
+    points.append((current_x, current_y))
+    current_x-=((short_length-(thickness/2))*(1/3))
+    current_y+=(short_length*(1/3))
+    points.append((current_x, current_y))
+    current_y+=(short_length*(2/3))
+    points.append((current_x, current_y))
+    inner_poly=gdspy.Polygon(points, **layer_def)
 
+    cutout=gdspy.boolean(outer_poly, inner_poly, 'not', **layer_def)
+
+    #Take away the CPW lines to form the contacts. Set cpw2==None if only one
+    if cpw2!=None:
+        contacts=gdspy.boolean(cutout, [*cpw,*cpw2], 'not',**layer_def)
+    else:
+        contacts=gdspy.boolean(cutout, [*cpw], 'not', **layer_def)
+
+
+    return contacts
 
 
 #Def types
-wafer_def={'layer':10, 'datatype':10}
+wafer_def={'layer':12, 'datatype':12}
 chip_def={'layer':11, 'datatype':11}
 superconductor_def={'layer':0, 'datatype':0}
 contact_def={'layer':1,'datatype':1}
@@ -247,12 +281,58 @@ cpw2=generate_cpw(0.5,600,3.5,300,1115,superconductor_def,start_point=(2500.75,2
 nw_cell.add([*nw1,*cpw,*cpw2])
 
 #Edges of the contact pads
-print(cpw[1].get_bounding_box())
-print(cpw2[1].get_bounding_box())
+y_cord_list=[]
+x_cord_list=[]
+for i in cpw[1].get_bounding_box():
+    y_cord_list.append(i[1])
+    x_cord_list.append(i[0])
+for i in cpw2[1].get_bounding_box():
+    y_cord_list.append(i[1])
 
-#def gold layer
-#contacts=generate_cpw_contacts((2510.45,2511.2), 1115, 300, (600,600),(12,12), contact_def)
-#nw_cell.add(contacts)
+sq_size=max(y_cord_list)-min(y_cord_list)
+strt_point_x=(max(x_cord_list)+min(x_cord_list))/2
+strt_point_y=max(y_cord_list)
+strt_point=(strt_point_x,strt_point_y)
+
+contacts=generate_cpw_contacts(strt_point, sq_size, 900, contact_def, cpw, cpw2)
+nw_cell.add(contacts)
+
+##########################################################################################
+
+
+
+###############################
+#
+#
+#Wafer and layer 4xcells on it
+#
+#
+################################
+wafer_cell=gdspy.Cell('Wafer')
+wafer_size=gdspy.Rectangle((0,0),(wafer_edge,wafer_edge), **wafer_def)
+wafer_cell.add(wafer_size)
+
+wafer_cell.add(gdspy.CellArray(nw_cell,2,2,(chip_edge-250,chip_edge-250)))
+
+#some alignment markers
+cross=generate_cross(400,20, contact_def, start_point=(wafer_edge-9000, wafer_edge-500))
+grill=generate_grill(400, 20, contact_def, start_point=(wafer_edge-9600,wafer_edge-500))
+wafer_cell.add([cross, grill])
+
+top_plate=gdspy.Rectangle((2000,wafer_edge-500), (wafer_edge-1000,wafer_edge-100), **contact_def)
+side_plate=gdspy.Rectangle((wafer_edge-500, 1000), (wafer_edge-100,wafer_edge-1000), **contact_def)
+wafer_cell.add([top_plate,side_plate])
+
+gdspy.LayoutViewer()
+
+
+
+
+
+
+
+
+
 #For inverting the shape for simulations
 '''
 bounds=cpw.get_bounding_box()
@@ -265,6 +345,6 @@ comb=gdspy.boolean(box, cpw, 'not')
 #cross=generate_cross(100,10)
 #grill=generate_grill(10, 1)
 
-gdspy.LayoutViewer()
+
 
 #gdspy.write_gds('Output_gds.gds')
